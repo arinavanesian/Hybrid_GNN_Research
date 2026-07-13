@@ -1,0 +1,4 @@
+BEST_LAYER_TYPES = ['sage', 'gin', 'sage']
+BEST_HIDDEN = 224
+BEST_DROPOUT =   0.0006
+LR = 0.0004

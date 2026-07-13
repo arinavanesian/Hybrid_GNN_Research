@@ -1,0 +1,20 @@
+Best trial:
+  Value (AUC): 0.8081161386926208
+  Params: 
+    layer_0: sage
+    layer_1: gin
+    layer_2: sage
+    hidden_dim: 224
+    dropout: 0.0006308611687740051
+    lr: 0.0004030409826324951
+Epoch 000 | Test AUC: 0.6971 | Time Elapsed: 0m 2s
+Epoch 010 | Test AUC: 0.7896 | Time Elapsed: 0m 27s
+Epoch 020 | Test AUC: 0.8161 | Time Elapsed: 0m 50s
+Epoch 030 | Test AUC: 0.8102 | Time Elapsed: 1m 12s
+Epoch 040 | Test AUC: 0.8115 | Time Elapsed: 1m 35s
+Epoch 050 | Test AUC: 0.8107 | Time Elapsed: 1m 58s
+Epoch 060 | Test AUC: 0.8095 | Time Elapsed: 2m 21s
+Epoch 070 | Test AUC: 0.8067 | Time Elapsed: 2m 44s
+Epoch 080 | Test AUC: 0.7992 | Time Elapsed: 3m 6s
+Epoch 090 | Test AUC: 0.8035 | Time Elapsed: 3m 29s
+Final test AUC: 0.8161

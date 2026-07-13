@@ -1,0 +1,333 @@
+from collections import defaultdict
+from random import random
+
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem.rdmolops import GetAdjacencyMatrix
+from torch_geometric.data import Data
+import torch
+import shutil
+from rdkit.Chem.Scaffolds import MurckoScaffold
+from rdkit.Chem import MolToSmiles
+
+def one_hot_encoding(x, permitted_list):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Maps input elements x which are not in the permitted list to the last element
+    of the permitted list.
+    Parameters
+    ----------
+    x : str
+        Element to be encoded.
+    permitted_list : list
+        List of permitted elements.
+    Returns
+    -------
+    list
+        One-hot encoded vector.
+    """
+    if x not in permitted_list:
+        x = permitted_list[-1]
+    binary_encoding = [int(boolean_value) for boolean_value in list(map(lambda s: x == s, permitted_list))]
+    return binary_encoding
+
+def get_atom_features(atom, 
+                      use_chirality = True, 
+                      hydrogens_implicit = True):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Takes an RDKit atom object as input and gives a 1d-numpy array of atom features as output.
+    
+    Parameters
+    ----------
+    atom : RDKit atom object
+        Atom to be encoded.
+    use_chirality : bool
+        Whether to use chirality features.
+    hydrogens_implicit : bool
+        Whether to use implicit hydrogens.
+    Returns
+    -------
+    np.array
+        Atom feature vector.
+    """
+    # list of permitted atoms
+    
+    permitted_list_of_atoms =  ['C','N','O','S','F','Si','P','Cl','Br','Mg','Na','Ca','Fe','As','Al','I', 'B','V','K','Tl','Yb','Sb','Sn','Ag','Pd','Co','Se','Ti','Zn', 'Li','Ge','Cu','Au','Ni','Cd','In','Mn','Zr','Cr','Pt','Hg','Pb','Unknown']
+    
+    if hydrogens_implicit == False:
+        permitted_list_of_atoms = ['H'] + permitted_list_of_atoms
+    
+    # atom features
+    
+    atom_type_enc = one_hot_encoding(str(atom.GetSymbol()), permitted_list_of_atoms)
+    
+    n_heavy_neighbors_enc = one_hot_encoding(int(atom.GetDegree()), [0, 1, 2, 3, 4, "MoreThanFour"])
+    
+    formal_charge_enc = one_hot_encoding(int(atom.GetFormalCharge()), [-3, -2, -1, 0, 1, 2, 3, "Extreme"])
+    
+    hybridisation_type_enc = one_hot_encoding(str(atom.GetHybridization()), ["S", "SP", "SP2", "SP3", "SP3D", "SP3D2", "OTHER"])
+    
+    is_in_a_ring_enc = [int(atom.IsInRing())]
+    
+    is_aromatic_enc = [int(atom.GetIsAromatic())]
+    
+    atomic_mass_scaled = [float((atom.GetMass() - 10.812)/116.092)]
+    
+    vdw_radius_scaled = [float((Chem.GetPeriodicTable().GetRvdw(atom.GetAtomicNum()) - 1.5)/0.6)]
+    
+    covalent_radius_scaled = [float((Chem.GetPeriodicTable().GetRcovalent(atom.GetAtomicNum()) - 0.64)/0.76)]
+    atom_feature_vector = atom_type_enc + n_heavy_neighbors_enc + formal_charge_enc + hybridisation_type_enc + is_in_a_ring_enc + is_aromatic_enc + atomic_mass_scaled + vdw_radius_scaled + covalent_radius_scaled
+                                    
+    if use_chirality == True:
+        chirality_type_enc = one_hot_encoding(str(atom.GetChiralTag()), ["CHI_UNSPECIFIED", "CHI_TETRAHEDRAL_CW", "CHI_TETRAHEDRAL_CCW", "CHI_OTHER"])
+        atom_feature_vector += chirality_type_enc
+    
+    if hydrogens_implicit == True:
+        n_hydrogens_enc = one_hot_encoding(int(atom.GetTotalNumHs()), [0, 1, 2, 3, 4, "MoreThanFour"])
+        atom_feature_vector += n_hydrogens_enc
+    return np.array(atom_feature_vector)
+
+def get_bond_features(bond, 
+                      use_stereochemistry = True):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Takes an RDKit bond object as input and gives a 1d array of bond features as output.
+    
+    Parameters
+    ----------
+    bond : RDKit bond object
+        Bond to be encoded.
+    use_stereochemistry : bool
+        Whether to use stereochemistry features.
+    Returns
+    -------
+    np.array
+        Bond feature vector.
+    """
+    permitted_list_of_bond_types = [Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE, Chem.rdchem.BondType.AROMATIC]
+    bond_type_enc = one_hot_encoding(bond.GetBondType(), permitted_list_of_bond_types)
+    
+    bond_is_conj_enc = [int(bond.GetIsConjugated())]
+    
+    bond_is_in_ring_enc = [int(bond.IsInRing())]
+    
+    bond_feature_vector = bond_type_enc + bond_is_conj_enc + bond_is_in_ring_enc
+    
+
+    if use_stereochemistry == True:
+        stereo_type_enc = one_hot_encoding(str(bond.GetStereo()), ["STEREOZ", "STEREOE", "STEREOANY", "STEREONONE"])
+        bond_feature_vector += stereo_type_enc
+    return np.array(bond_feature_vector)
+
+
+def create_pytorch_geometric_graph_data_list_from_smiles_and_labels(x_smiles, y):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Creates a list of PyTorch Geometric Data objects from smiles strings and labels.
+    
+    Parameters
+    ----------
+    x_smiles : list
+        List of smiles strings.
+   y : list
+       List of labels.
+   Returns
+   -------
+   list
+       List of PyTorch Geometric Data objects.
+   """
+    data_list = []
+
+    for smiles, y_val in zip(x_smiles, y):
+        mol = Chem.MolFromSmiles(smiles)
+        n_nodes = mol.GetNumAtoms()
+        n_edges = 2 * mol.GetNumBonds()
+
+        unrelated_smiles = "O=O"
+        unrelated_mol = Chem.MolFromSmiles(unrelated_smiles)
+        n_node_features = len(get_atom_features(unrelated_mol.GetAtomWithIdx(0)))
+        n_edge_features = len(get_bond_features(unrelated_mol.GetBondBetweenAtoms(0, 1)))
+
+        X = np.zeros((n_nodes, n_node_features))
+        for atom in mol.GetAtoms():
+            X[atom.GetIdx(), :] = get_atom_features(atom)
+        X = torch.tensor(X, dtype=torch.float)
+
+        rows, cols = np.nonzero(GetAdjacencyMatrix(mol))
+        torch_rows = torch.from_numpy(rows.astype(np.int64)).to(torch.long)
+        torch_cols = torch.from_numpy(cols.astype(np.int64)).to(torch.long)
+        E = torch.stack([torch_rows, torch_cols], dim=0)
+
+        EF = np.zeros((n_edges, n_edge_features))
+        for k, (i, j) in enumerate(zip(rows, cols)):
+            EF[k] = get_bond_features(mol.GetBondBetweenAtoms(int(i), int(j)))
+        EF = torch.tensor(EF, dtype=torch.float)
+
+        y_tensor = torch.tensor([y_val], dtype=torch.float)
+        data_list.append(Data(x=X, edge_index=E, edge_attr=EF, y=y_tensor))
+
+    return data_list
+
+
+def save_ckp(state, is_best, checkpoint_dir, best_model_dir, filename, best_model):
+    """
+    Saves the checkpoint to a file.
+    
+    Parameters
+    ----------
+    state : dict
+        Checkpoint state.
+    is_best : bool
+        Whether the checkpoint is the best.
+    checkpoint_dir : str
+        Checkpoint directory.
+    best_model_dir : str
+        Best model directory.
+    filename : str
+        Filename.
+    best_model : str
+        Best model name.
+    Returns
+    -------
+    None
+    """
+    f_path = checkpoint_dir + filename
+    torch.save(state, f_path)
+    if is_best:
+        best_fpath = best_model_dir + best_model
+        shutil.copyfile(f_path, best_fpath)
+
+
+def optimizer_to(optim, device):
+    """
+    Moves the optimizer to the specified device.
+    
+    Parameters
+    ----------
+    optim : torch.optim.Optimizer
+        Optimizer to move.
+    device : torch.device
+        Device to move the optimizer to.
+    Returns
+    -------
+    None
+    """
+    for param in optim.state.values():
+        if isinstance(param, torch.Tensor):
+            param.data = param.data.to(device)
+            if param._grad is not None:
+                param._grad.data = param._grad.data.to(device)
+        elif isinstance(param, dict):
+            for subparam in param.values():
+                if isinstance(subparam, torch.Tensor):
+                    subparam.data = subparam.data.to(device)
+                    if subparam._grad is not None:
+                        subparam._grad.data = subparam._grad.data.to(device)
+
+
+def load_ckp(checkpoint_fpath, model, optimizer):
+    """
+    Loads the checkpoint from a file.
+    
+    Parameters
+    ----------
+    checkpoint_fpath : str
+        Checkpoint file path.
+    model : torch.nn.Module
+        Model to load the checkpoint to.
+    optimizer : torch.optim.Optimizer
+        Optimizer to load the checkpoint to.
+    Returns
+    -------
+    tuple
+        Tuple of (model, optimizer, epoch).
+    """
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    checkpoint = torch.load(checkpoint_fpath, map_location=device)
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    model.to(device)
+    optimizer_to(optimizer, device)
+    
+    return model, optimizer, checkpoint['epoch']
+
+def get_scaffold(smiles: str) -> str:
+    """Return canonical Bemis-Murcko scaffold SMILES for a molecule.
+    Parameters
+    ----------
+    smiles : str
+        SMILES string of the molecule.
+    Returns"""
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return ""
+    scaffold = MurckoScaffold.GetScaffoldForMol(mol)
+    return MolToSmiles(scaffold)
+
+
+def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
+    """
+    Groups molecules by Bemis-Murcko scaffold and assigns entire scaffold
+    groups to train / val / test so that no scaffold leaks across splits.
+ 
+    Parameters
+    ----------
+    smiles_list : list
+        List of smiles strings.
+    train_frac : float
+        Fraction of data to use for training.
+    val_frac : float
+        Fraction of data to use for validation.
+    seed : int
+        Random seed.
+    Returns
+    -------
+    tuple
+        Tuple of (train_idx, val_idx, test_idx).
+    """
+    # Map scaffold → list of molecule indices
+    scaffold_to_indices = defaultdict(list)
+    for idx, smi in enumerate(smiles_list):
+        scaffold = get_scaffold(smi)
+        scaffold_to_indices[scaffold].append(idx)
+ 
+    # Sort scaffold groups by size (largest first) then shuffle for reproducibility
+    scaffold_groups = list(scaffold_to_indices.values())
+    rng = random.Random(seed)
+    rng.shuffle(scaffold_groups)
+ 
+    n_total = len(smiles_list)
+    train_cutoff = int(train_frac * n_total)
+    val_cutoff   = int((train_frac + val_frac) * n_total)
+ 
+    train_idx, val_idx, test_idx = [], [], []
+    for group in scaffold_groups:
+        if len(train_idx) < train_cutoff:
+            train_idx.extend(group)
+        elif len(train_idx) + len(val_idx) < val_cutoff:
+            val_idx.extend(group)
+        else:
+            test_idx.extend(group)
+ 
+    print(f"Scaffold split → train: {len(train_idx)}, "
+          f"val: {len(val_idx)}, test: {len(test_idx)}")
+    return train_idx, val_idx, test_idx
+
+
+def round_to_4(value):
+    """
+    Rounds the value to 4 decimal places.
+    Parameters
+    ----------
+    value : float
+        Value to round.
+    Returns
+    -------
+    float
+        Rounded value.
+    """
+    if isinstance(value, (float, np.floating)):
+        return np.round(value, 4)
+    return value
+
