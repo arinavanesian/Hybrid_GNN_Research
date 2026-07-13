@@ -1,0 +1,64 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+hybrid_gnn_quesado/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+# PyTorch / ML artifacts
+*.pt
+*.pth
+*.ckpt
+*.model
+
+# Project-specific generated folders
+**/checkpoints*/
+**/results*/
+
+# RDKit / pickles and caches
+*.pkl
+*.pickle
+
+# Jupyter
+.ipynb_checkpoints
+
+# Editors/IDEs
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+*.tmp
+
+# Testing / coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Misc
+*.bak
+*.swp
