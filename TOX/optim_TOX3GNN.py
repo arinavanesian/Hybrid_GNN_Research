@@ -29,7 +29,7 @@ import optuna
 import shutil
 import random
 import warnings
-
+from best_results import BEST_DROPOUT, BEST_HIDDEN, BEST_LAYER_TYPES, LR
 from utils import (
     one_hot_encoding,
     get_atom_features,
@@ -40,6 +40,13 @@ from utils import (
     optimizer_to,
     load_ckp,
 )
+
+SEED = 42
+random.seed(SEED)
+np.random.seed(SEED)
+torch.manual_seed(SEED)
+
+
 df=pd.read_csv('tox21_dataset.csv')
 #for i in df.columns:
     #print(i, df[i].isna().sum(), str(df[i].sum()/len(df[i])))
@@ -135,11 +142,21 @@ pos_weight = torch.FloatTensor([6]).to(device)
 
 criterion=torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #-----------------------------------------------------------------------------------------   
-# Wrap data in a data loader
+
 data_size = len(data_list)
 # Split into train, validation, test (60/20/20)
-train_idx, temp_idx = train_test_split(range(data_size), test_size=0.4, random_state=42)
-val_idx, test_idx = train_test_split(temp_idx, test_size=0.5, random_state=42)
+USE_SCAFFOLD_HOP = True
+if USE_SCAFFOLD_HOP:
+    print("Using SCAFFOLD split (out-of-distribution evaluation)")
+    train_idx, val_idx, test_idx = scaffold_split(X_smiles, seed=SEED)
+else:
+    print("Using RANDOM split")
+    temp_idx  = list(range(data_size))
+    random.shuffle(temp_idx)
+    train_idx, temp = train_test_split(temp_idx, test_size=0.4, random_state=SEED)
+    val_idx, test_idx = train_test_split(temp,   test_size=0.5, random_state=SEED)
+    print(f"Random split → train: {len(train_idx)}, val: {len(val_idx)}, test: {len(test_idx)}")
+ 
 
 loader = DataLoader([data_list[i] for i in train_idx], batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True, drop_last=True)
 val_loader = DataLoader([data_list[i] for i in val_idx], batch_size=NUM_GRAPHS_PER_BATCH, shuffle=False, drop_last=False)
@@ -254,54 +271,61 @@ def objective(trial):
     return best_val_auc
 
 # --- Optuna ----
-study = optuna.create_study(direction='maximize')
-study.optimize(objective, n_trials=20, show_progress_bar=True)
+RUN_OPTUNA = False
+if RUN_OPTUNA:
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=20, show_progress_bar=True)
+
+    print("Best trial:")
+    best_trial = study.best_trial
+    print(f"  Value (AUC): {best_trial.value}")
+    print("  Params: ")
+    for key, value in best_trial.params.items():
+        print(f"    {key}: {round_to_4(value)}")
+
+    # best hyperparameters
+    best_layer_types = [best_trial.params[f'layer_{i}'] for i in range(3)]
+    best_hidden = best_trial.params['hidden_dim']
+    best_dropout = round_to_4(best_trial.params['dropout'])
+    best_lr = round_to_4(best_trial.params['lr'])
 
 
 
-
-# --- Save Optuna results to a text file ---
-with open("optuna_results.txt", "w") as f:
-    f.write("Optuna Study Results\n")
-    f.write("=" * 60 + "\n")
-    f.write(f"Best trial value (AUC): {study.best_trial.value:.6f}\n")
-    f.write("Best hyperparameters:\n")
-    for key, value in study.best_trial.params.items():
-        f.write(f"  {key}: {round_to_4(value)}\n")
-    f.write("\nAll trials (sorted by AUC, descending):\n")
-    f.write("=" * 60 + "\n")
-    # Sort trials by value (best first)
-    sorted_trials = sorted(
-        [t for t in study.trials if t.value is not None],
-        key=lambda t: t.value,
-        reverse=True
-    )
-    for i, trial in enumerate(sorted_trials):
-        f.write(f"{i+1}. Trial #{trial.number}: AUC={trial.value:.6f} | Params={trial.params}\n")
-    f.write("=" * 60 + "\n")
-print(" Optuna results saved to 'optuna_results.txt'")
-
-print("Best trial:")
-best_trial = study.best_trial
-print(f"  Value (AUC): {best_trial.value}")
-print("  Params: ")
-for key, value in best_trial.params.items():
-    print(f"    {key}: {round_to_4(value)}")
-
-# Extract best hyperparameters
-best_layer_types = [best_trial.params[f'layer_{i}'] for i in range(3)]
-best_hidden = best_trial.params['hidden_dim']
-best_dropout = round_to_4(best_trial.params['dropout'])
-best_lr = round_to_4(best_trial.params['lr'])
+    # --- Save Optuna results to a text file ---
+    with open("optuna_results.txt", "w") as f:
+        f.write("Optuna Study Results\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Best trial value (AUC): {study.best_trial.value:.6f}\n")
+        f.write("Best hyperparameters:\n")
+        for key, value in study.best_trial.params.items():
+            f.write(f"  {key}: {round_to_4(value)}\n")
+        f.write("\nAll trials (sorted by AUC, descending):\n")
+        f.write("=" * 60 + "\n")
+        # Sort trials by value (best first)
+        sorted_trials = sorted(
+            [t for t in study.trials if t.value is not None],
+            key=lambda t: t.value,
+            reverse=True
+        )
+        for i, trial in enumerate(sorted_trials):
+            f.write(f"{i+1}. Trial #{trial.number}: AUC={trial.value:.6f} | Params={trial.params}\n")
+        f.write("=" * 60 + "\n")
+    print(" Optuna results saved to 'optuna_results.txt'")
+else:
+    best_layer_types = BEST_LAYER_TYPES
+    best_hidden = BEST_HIDDEN
+    best_dropout = BEST_DROPOUT
+    best_lr = LR
 
 
-# Final model with best hyperparameters
+
+# Final model 
 final_model = GNN(best_layer_types, best_hidden, best_dropout).to(device)
 optimizer = torch.optim.Adam(final_model.parameters(), lr=best_lr)
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([6]).to(device))
 
 # Combine train+val for final training
-final_train_loader = DataLoader([data_list[i] for i in train_idx + val_idx], 
+final_train_loader = DataLoader([data_list[i] for i in list(train_idx) + list(val_idx)], 
                                 batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True, drop_last=True)
 
 losses = []
@@ -344,45 +368,45 @@ print(f"Final test AUC: {max(acc_list):.4f}")
 # Test Epochs
 
 
-# for epoch in range(100): #10_000
-#     best_epoch = False
-#     loss, optimizer = train(loader)
-#     losses.append(loss)
-#     roc_auc, precision, specificity, cm = test(test_loader)
+for epoch in range(100): #10_000
+    best_epoch = False
+    loss, optimizer = train(loader)
+    losses.append(loss)
+    roc_auc, precision, specificity, cm = test(test_loader)
     
-#     if roc_auc >= max(acc_list):
-#         best_epoch = True
+    if roc_auc >= max(acc_list):
+        best_epoch = True
 
-#     acc_list.append(roc_auc)
-#     precision_list.append(precision)
-#     specificity_list.append(specificity)
+    acc_list.append(roc_auc)
+    precision_list.append(precision)
+    specificity_list.append(specificity)
     
-#     checkpoint_gnn = {'epoch': epoch + 1,
-#                 'state_dict': model.state_dict(),
-#                 'optimizer': optimizer.state_dict()}
+    checkpoint_gnn = {'epoch': epoch + 1,
+                'state_dict': model.state_dict(),
+                'optimizer': optimizer.state_dict()}
 
    
-# #----------------------------------------------------------------------------------------------
-# #             Give a name to the file 
-#     NAME = "sage_sage_sage"
-#     checkpoint_dir = "checkpoints_tox21/" + NAME  # Give a name to the file 
-#     model_dir = "checkpoints_tox21/" + NAME + "_model" # Give a name to the file 
+#----------------------------------------------------------------------------------------------
+#             Give a name to the file 
+    NAME = "sage_sage_sage"
+    checkpoint_dir = "checkpoints_tox21/" + NAME  # Give a name to the file 
+    model_dir = "checkpoints_tox21/" + NAME + "_model" # Give a name to the file 
     
-#     name = "results_tox21/" + NAME + ".txt"        # Give a name to the file 
-#     file = open(name,"a")
-#     file.write("roc_auc: ")
-#     file.write(str(roc_auc))
-#     file.write("\n")
-#     file.close()
+    name = "results_tox21/" + NAME + ".txt"        # Give a name to the file 
+    file = open(name,"a")
+    file.write("roc_auc: ")
+    file.write(str(roc_auc))
+    file.write("\n")
+    file.close()
     
     
-#     save_ckp(checkpoint_gnn, best_epoch, checkpoint_dir, model_dir, "/checkpoints_" + NAME + "_tox21.pt", "/model_" + NAME + "_tox21.pt" )
+    save_ckp(checkpoint_gnn, best_epoch, checkpoint_dir, model_dir, "/checkpoints_" + NAME + "_tox21.pt", "/model_" + NAME + "_tox21.pt" )
     
 
-#     if epoch % 20==0:
-#       print(max(acc_list))
-#       print(f"Epoch {epoch} | Train Loss {loss} | roc auc score {roc_auc}")
-#       sns.set(style="darkgrid")
-#       acc_indices = [i for i,l in enumerate(acc_list)]
-#       grafico = sns.lineplot(x=acc_indices, y=acc_list)
-#       plt.show()
+    if epoch % 20==0:
+      print(max(acc_list))
+      print(f"Epoch {epoch} | Train Loss {loss} | roc auc score {roc_auc}")
+      sns.set(style="darkgrid")
+      acc_indices = [i for i,l in enumerate(acc_list)]
+      grafico = sns.lineplot(x=acc_indices, y=acc_list)
+      plt.show()
