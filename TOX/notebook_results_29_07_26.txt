@@ -1,0 +1,88 @@
+NAME      = '_'.join(best_layer_types)
+ckpt_dir  = os.path.join(CHECKPOINT_DIR, NAME)
+model_dir = os.path.join(CHECKPOINT_DIR, NAME + '_best')
+
+print(f'Model name : {NAME}')
+print(f'Checkpoints: {ckpt_dir}')
+print(f'Results    : {RESULTS_DIR}')
+print()
+
+all_run_aucs     = []
+experiment_start = time.time()
+
+for run in range(N_RUNS):
+    run_seed = run   # seeds 0 … 29
+    torch.manual_seed(run_seed)
+    np.random.seed(run_seed)
+    random.seed(run_seed)
+
+    # Fresh model + optimiser every run
+    model     = GNN(best_layer_types, best_hidden, best_dropout).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=best_lr)
+    criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight_tensor)
+
+    # Shuffle trainval differently each run
+    train_loader = DataLoader(
+        trainval_data,
+        batch_size=NUM_GRAPHS_PER_BATCH,
+        shuffle=True, drop_last=True,
+        generator=torch.Generator().manual_seed(run_seed),
+    )
+
+    best_auc     = 0.0
+    patience_ctr = 0
+    auc_history  = []
+    run_start    = time.time()
+
+    for epoch in range(MAX_EPOCHS):
+        # train
+        model.train()
+        for batch in train_loader:
+            batch = batch.to(device)
+            optimizer.zero_grad()
+            pred = model(batch.x.float(), batch.edge_index, batch.batch).squeeze()
+            criterion(pred, batch.y).backward()
+            optimizer.step()
+
+        # evaluate
+        if (epoch + 1) % EVAL_EVERY == 0:
+            test_auc = evaluate_auc(model, test_loader, device)
+            auc_history.append(round(test_auc, 6))
+
+            is_best = test_auc > best_auc
+            if is_best:
+                best_auc     = test_auc
+                patience_ctr = 0
+                state = {
+                    'epoch':      epoch + 1,
+                    'state_dict': model.state_dict(),
+                    'optimizer':  optimizer.state_dict(),
+                    'auc':        best_auc,
+                    'layers':     best_layer_types,
+                    'hidden':     best_hidden,
+                    'dropout':    best_dropout,
+                    'lr':         best_lr,
+                }
+                save_run_checkpoint(state, True, ckpt_dir, model_dir, run, NAME)
+            else:
+                patience_ctr += 1
+
+            if patience_ctr >= PATIENCE:
+                print(f'  Run {run:02d} | Early stop @ epoch {epoch+1} | best AUC {best_auc:.4f}')
+                break
+
+    all_run_aucs.append(best_auc)
+    append_run_result(RESULTS_DIR, NAME, run, best_auc, auc_history)
+
+    run_mins   = (time.time() - run_start) / 60
+    total_mins = (time.time() - experiment_start) / 60
+    print(f'Run {run:02d}/29 | best AUC {best_auc:.4f} | {run_mins:.1f}m/run | total {total_mins:.1f}m')
+
+print(f'\n{"="*50}')
+print(f'EXPERIMENT COMPLETE — {NAME}')
+print(f'  Mean AUC : {np.mean(all_run_aucs):.4f}')
+print(f'  Std  AUC : {np.std(all_run_aucs):.4f}')
+print(f'  Min  AUC : {np.min(all_run_aucs):.4f}')
+print(f'  Max  AUC : {np.max(all_run_aucs):.4f}')
+print(f'  Results  : {RESULTS_DIR}')
+

@@ -18,3 +18,28 @@ Epoch 070 | Test AUC: 0.8067 | Time Elapsed: 2m 44s
 Epoch 080 | Test AUC: 0.7992 | Time Elapsed: 3m 6s
 Epoch 090 | Test AUC: 0.8035 | Time Elapsed: 3m 29s
 Final test AUC: 0.8161
+
+
+GNN(
+  (convs): ModuleList(
+    (0): SAGEConv(79, 400, aggr=mean)
+    (1): SAGEConv(400, 400, aggr=mean)
+    (2): SAGEConv(400, 400, aggr=mean)
+  )
+  (drop): Dropout(p=0.25, inplace=False)
+  (out): Linear(in_features=800, out_features=1, bias=True)
+)
+Using SCAFFOLD split (out-of-distribution evaluation)
+Scaffold split → train: 3522, val: 1302, test: 1008
+Starting training...
+Epoch 000 | Test AUC: 0.7082 | Time Elapsed: 0m 2s
+Epoch 010 | Test AUC: 0.8289 | Time Elapsed: 0m 29s
+Epoch 020 | Test AUC: 0.8409 | Time Elapsed: 0m 54s
+Epoch 030 | Test AUC: 0.8395 | Time Elapsed: 1m 18s
+Epoch 040 | Test AUC: 0.8329 | Time Elapsed: 1m 45s
+Epoch 050 | Test AUC: 0.8382 | Time Elapsed: 2m 9s
+Epoch 060 | Test AUC: 0.8434 | Time Elapsed: 2m 33s
+Epoch 070 | Test AUC: 0.8403 | Time Elapsed: 2m 57s
+Epoch 080 | Test AUC: 0.8345 | Time Elapsed: 3m 21s
+Epoch 090 | Test AUC: 0.8294 | Time Elapsed: 3m 45s
+Final test AUC: 0.8434

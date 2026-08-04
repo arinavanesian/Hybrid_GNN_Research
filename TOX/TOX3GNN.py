@@ -188,6 +188,19 @@ data = DataLoader(dataset = data_list, batch_size = 64)
 
 
 def save_ckp(state, is_best, checkpoint_dir, best_model_dir, filename, best_model):
+    """
+    Saves the current state of the training session to a checkpoint file.
+
+    Input:
+    state: checkpoint we want to save
+    is_best: is this the best checkpoint; min validation loss
+    checkpoint_dir: folder where checkpoints are saved
+    best_model_dir: folder where the best model is saved
+    filename: name of the checkpoint file
+    best_model: name of the best model file
+    Returns:
+        None:
+    """
     f_path = checkpoint_dir + filename
     torch.save(state, f_path)
     if is_best:
@@ -209,6 +222,18 @@ def optimizer_to(optim, device):
                         subparam._grad.data = subparam._grad.data.to(device)
 
 def load_ckp(checkpoint_fpath, model, optimizer):
+    """
+    Loads checkpoint from file to model and optimizer.
+
+    Input:
+    checkpoint_fpath: path to checkpoint file
+    model: model that we want to load checkpoint parameters into
+    optimizer: optimizer we defined in previous training
+    Returns:
+        model: model with loaded parameters
+        optimizer: optimizer with loaded parameters
+        checkpoint['epoch']: epoch that we saved in checkpoint
+    """
     device = torch.device("cuda:0" if torch.cuda.is_available() else torch.device("cpu"))
     checkpoint = torch.load(checkpoint_fpath, map_location = device)
     model.load_state_dict(checkpoint['state_dict'])
@@ -234,13 +259,15 @@ class GNN(torch.nn.Module):
         #self.mlp1 = nn.Sequential(nn.Linear(79, embedding_size),
         #                          nn.BatchNorm1d(embedding_size), nn.ReLU(),
         #                          nn.Linear(embedding_size, embedding_size), nn.ReLU())
-        #self.mlp2 = nn.Sequential(nn.Linear(embedding_size, embedding_size),
-        #                          nn.BatchNorm1d(embedding_size), nn.ReLU(),
-        #                          nn.Linear(embedding_size, embedding_size), nn.ReLU())
+        self.initial_sage = SAGEConv(79, embedding_size)
+
+        self.mlp2 = nn.Sequential(nn.Linear(embedding_size, embedding_size),
+                                 nn.BatchNorm1d(embedding_size), nn.ReLU(),
+                                 nn.Linear(embedding_size, embedding_size), nn.ReLU())
         #self.ginconv1 = GINConv(self.mlp1 , eps=0.00005, train_eps=True)
         #self.out_mlp1 = nn.Linear(embedding_size , embedding_size)
-        #self.ginconv2 = GINConv(self.mlp2 , eps=0.00005, train_eps=True)
-        #self.out_mlp2 = nn.Linear(embedding_size , embedding_size)
+        self.ginconv2 = GINConv(self.mlp2 , eps=0.00005, train_eps=True)
+        self.out_mlp2 = nn.Linear(embedding_size , embedding_size)
         #self.ginconv3 = GINConv(self.mlp2 , eps=0.00005, train_eps=True)
         #self.out_mlp3 = nn.Linear(embedding_size , embedding_size)
 
@@ -254,8 +281,7 @@ class GNN(torch.nn.Module):
         
         #Graph Sage layers -  comment the layers that are not going to be used
         
-        self.initial_sage = SAGEConv(79, embedding_size)
-        self.sage1 = SAGEConv(embedding_size , embedding_size)
+        # self.sage1 = SAGEConv(embedding_size , embedding_size)
         self.sage2 = SAGEConv(embedding_size , embedding_size)
         
         
@@ -362,10 +388,8 @@ def train(loader):
       pred=torch.reshape(pred,(NUM_GRAPHS_PER_BATCH,))
 
       loss = criterion(pred,batch.y)
-            
-      loss.backward()  # Calculating the loss and gradients
-
-      optimizer.step()   # Update using the gradients
+      loss.backward() 
+      optimizer.step()  
     return loss,  optimizer
 
 def test(loader):

@@ -31,14 +31,10 @@ import random
 import warnings
 from best_results import BEST_DROPOUT, BEST_HIDDEN, BEST_LAYER_TYPES, LR
 from utils import (
-    one_hot_encoding,
-    get_atom_features,
-    get_bond_features,
     create_pytorch_geometric_graph_data_list_from_smiles_and_labels,
     round_to_4,
     save_ckp,
-    optimizer_to,
-    load_ckp,
+    scaffold_split
 )
 
 SEED = 42
@@ -47,7 +43,7 @@ np.random.seed(SEED)
 torch.manual_seed(SEED)
 
 
-df=pd.read_csv('tox21_dataset.csv')
+df=pd.read_csv('TOX/tox21_dataset.csv')
 #for i in df.columns:
     #print(i, df[i].isna().sum(), str(df[i].sum()/len(df[i])))
 
@@ -123,7 +119,7 @@ class GNN(torch.nn.Module):
         x = self.out(x)
         return x
 
-model = GNN(layer_types=['sage', 'sage', 'sage'], hidden_dim=400, dropout=0.25)
+model = GNN(layer_types=['sage', 'gin', 'sage'], hidden_dim=400, dropout=0.25)
 print(model)
 
 warnings.filterwarnings("ignore")
@@ -148,7 +144,7 @@ data_size = len(data_list)
 USE_SCAFFOLD_HOP = True
 if USE_SCAFFOLD_HOP:
     print("Using SCAFFOLD split (out-of-distribution evaluation)")
-    train_idx, val_idx, test_idx = scaffold_split(X_smiles, seed=SEED)
+    train_idx, val_idx, test_idx = scaffold_split(X, seed=SEED)
 else:
     print("Using RANDOM split")
     temp_idx  = list(range(data_size))
@@ -271,7 +267,7 @@ def objective(trial):
     return best_val_auc
 
 # --- Optuna ----
-RUN_OPTUNA = False
+RUN_OPTUNA = True
 if RUN_OPTUNA:
     study = optuna.create_study(direction='maximize')
     study.optimize(objective, n_trials=20, show_progress_bar=True)
@@ -367,7 +363,7 @@ print(f"Final test AUC: {max(acc_list):.4f}")
 
 # Test Epochs
 
-
+PATIENCE = 10
 for epoch in range(100): #10_000
     best_epoch = False
     loss, optimizer = train(loader)
@@ -388,11 +384,11 @@ for epoch in range(100): #10_000
    
 #----------------------------------------------------------------------------------------------
 #             Give a name to the file 
-    NAME = "sage_sage_sage"
-    checkpoint_dir = "checkpoints_tox21/" + NAME  # Give a name to the file 
-    model_dir = "checkpoints_tox21/" + NAME + "_model" # Give a name to the file 
+    NAME ="_".join(best_layer_types)
+    checkpoint_dir = "TOX/checkpoints_tox21/" + NAME  # Give a name to the file 
+    model_dir = "TOX/checkpoints_tox21/" + NAME + "_model" # Give a name to the file 
     
-    name = "results_tox21/" + NAME + ".txt"        # Give a name to the file 
+    name = "TOX/results_tox21/" + NAME + ".txt"        # Give a name to the file 
     file = open(name,"a")
     file.write("roc_auc: ")
     file.write(str(roc_auc))
