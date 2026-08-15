@@ -281,8 +281,8 @@ class GNN(torch.nn.Module):
         
         #Graph Sage layers -  comment the layers that are not going to be used
         
-        # self.sage1 = SAGEConv(embedding_size , embedding_size)
-        self.sage2 = SAGEConv(embedding_size , embedding_size)
+        self.sage1 = SAGEConv(embedding_size , embedding_size)
+        # self.sage2 = SAGEConv(embedding_size , embedding_size)
         
         
         # GAT layers - comment the layers that are not going to be used
@@ -313,17 +313,18 @@ class GNN(torch.nn.Module):
         #Sage
         hidden = self.initial_sage(x, edge_index)
         hidden = F.tanh(hidden)
+        hidden = self.ginconv2(hidden, edge_index)
+        hidden = self.out_mlp2(hidden)
         hidden = self.sage1(hidden, edge_index)
         hidden = F.tanh(hidden)
-        hidden = self.sage2(hidden, edge_index)
-        hidden = F.tanh(hidden)
+        # hidden = self.sage2(hidden, edge_index)
+        # hidden = F.tanh(hidden)
         
         #GIN
         #hidden = self.ginconv1(x, edge_index)
         #hidden = self.out_mlp1(hidden)
         #hidden = F.tanh(hidden)
-        #hidden = self.ginconv2(hidden, edge_index)
-        #hidden = self.out_mlp2(hidden)
+
         #hidden = F.tanh(hidden)
         #hidden = self.ginconv3(hidden, edge_index)
         #hidden = self.out_mlp3(hidden)

@@ -138,16 +138,17 @@ def create_pytorch_geometric_graph_data_list_from_smiles_and_labels(x_smiles, y)
        List of PyTorch Geometric Data objects.
    """
     data_list = []
-
+    unrelated_smiles = "O=O"
+    unrelated_mol = Chem.MolFromSmiles(unrelated_smiles)
+    n_node_features = len(get_atom_features(unrelated_mol.GetAtomWithIdx(0)))
+    n_edge_features = len(get_bond_features(unrelated_mol.GetBondBetweenAtoms(0, 1)))
+    
     for smiles, y_val in zip(x_smiles, y):
         mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            continue
         n_nodes = mol.GetNumAtoms()
         n_edges = 2 * mol.GetNumBonds()
-
-        unrelated_smiles = "O=O"
-        unrelated_mol = Chem.MolFromSmiles(unrelated_smiles)
-        n_node_features = len(get_atom_features(unrelated_mol.GetAtomWithIdx(0)))
-        n_edge_features = len(get_bond_features(unrelated_mol.GetBondBetweenAtoms(0, 1)))
 
         X = np.zeros((n_nodes, n_node_features))
         for atom in mol.GetAtoms():
