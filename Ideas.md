@@ -93,3 +93,13 @@ This analysis directly reveals **Activity Cliffs**—molecules with $Tanimoto > 
 | **1. Functional Groups / Alerts** | Direct chemical features causing toxicity. | Model explainability & sanity checking. |
 | **2. Cross-Task Promiscuity** | Identifies baseline cell poisons vs. specific target binders. | Data auditing & loss-weighting strategy. |
 | **3. Tanimoto vs. Scaffold Correlation** | Quantifies Activity Cliffs & structural sensitivity. | Architecture selection (GIN vs. SAGE) & split evaluation. |
+
+
+
+# Fine-tuning
+Pre-train your GNN on large-scale chemical structures (e.g., ZINC or ChEMBL using ChemBERTa or Self-Supervised Graph Masking) before fine-tuning on Tox21. This teaches the model general molecular interactions and implicit binding physics.
+Train your GNN backbone to predict $\text{pIC}_{50}$ / $\text{K}_i$ values across millions of compound-target pairs in ChEMBL or PubChem.
+
+# Scaffold-splits
+Rerun on the final ones to find scaffolds between 
+cannonical smile scaffolds

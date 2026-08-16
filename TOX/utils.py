@@ -142,7 +142,7 @@ def create_pytorch_geometric_graph_data_list_from_smiles_and_labels(x_smiles, y)
     unrelated_mol = Chem.MolFromSmiles(unrelated_smiles)
     n_node_features = len(get_atom_features(unrelated_mol.GetAtomWithIdx(0)))
     n_edge_features = len(get_bond_features(unrelated_mol.GetBondBetweenAtoms(0, 1)))
-    
+
     for smiles, y_val in zip(x_smiles, y):
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
@@ -254,23 +254,28 @@ def load_ckp(checkpoint_fpath, model, optimizer):
     return model, optimizer, checkpoint['epoch']
 
 def get_scaffold(smiles: str) -> str:
-    """Return canonical Bemis-Murcko scaffold SMILES for a molecule.
+    """Return Bemis-Murcko scaffold SMILES for a molecule if
+    possible, otherwise return the canonical SMILES.
     Parameters
     ----------
     smiles : str
         SMILES string of the molecule.
     Returns"""
-    mol = Chem.MolFromSmiles(smiles)
-    if mol is None:
-        return ""
-    scaffold = MurckoScaffold.GetScaffoldForMol(mol)
-    return MolToSmiles(scaffold)
-
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return "INVALID"
+        scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=True)
+    except Exception:
+        scaffold = ""
+    cannonincal_smiles = Chem.MolToSmiles(mol, canonical=True)
+    
+    return scaffold if scaffold != "" else cannonincal_smiles
 
 def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
     """
-    Groups molecules by Bemis-Murcko scaffold and assigns entire scaffold
-    groups to train / val / test so that no scaffold leaks across splits.
+    Split a list of SMILES strings into train, validation, and test sets based on Bemis-Murcko scaffolds.
+    The split is done such that molecules with the same scaffold are in the same set (includeChirality=True).
  
     Parameters
     ----------
@@ -288,15 +293,16 @@ def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
         Tuple of (train_idx, val_idx, test_idx).
     """
     # Map scaffold → list of molecule indices
-    scaffold_to_indices = defaultdict(list)
+    scaffolds = {}
     for idx, smi in enumerate(smiles_list):
         scaffold = get_scaffold(smi)
-        scaffold_to_indices[scaffold].append(idx)
- 
-    # Sort scaffold groups by size (largest first) then shuffle for reproducibility
-    scaffold_groups = list(scaffold_to_indices.values())
-    rng = random.Random(seed)
-    rng.shuffle(scaffold_groups)
+        if scaffold not in scaffolds:
+            scaffolds[scaffold] = []
+        scaffolds[scaffold].append(idx) 
+    # Sort scaffold groups by size (largest first)
+    scaffold_groups = sorted(
+        scaffolds.values(), key=lambda x: len(x), reverse=True
+    )
  
     n_total = len(smiles_list)
     train_cutoff = int(train_frac * n_total)
@@ -311,8 +317,11 @@ def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
         else:
             test_idx.extend(group)
  
-    print(f"Scaffold split → train: {len(train_idx)}, "
-          f"val: {len(val_idx)}, test: {len(test_idx)}")
+    print(
+      f"Scaffold split → train: {len(train_idx)} ({len(train_idx)/n_total:.1%}),"
+      f" val: {len(val_idx)} ({len(val_idx)/n_total:.1%}), test:"
+      f" {len(test_idx)} ({len(test_idx)/n_total:.1%})"
+  )
     return train_idx, val_idx, test_idx
 
 

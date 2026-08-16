@@ -87,26 +87,13 @@ If this file is superseded by the notebook, delete it rather than leave it.
   "GAT" here isn't multi-head; edge_attr is computed but never used by any
   layer - either use GINEConv/NNConv or drop it and say so.
 
+Wildman-Crippen LogP (Lipophilicity)
 
-4. tox21_analysis.ipynb
-- No markdown cells at all. Each figure needs a sentence on what it shows and
-  what you conclude from it.
+Topological Polar Surface Area (TPSA)
 
-- Cell 4: pd.DataFrame(columns=..., data=...values) casts to object dtype,
-  which is why describe() prints "count 5832.0 / unique 2.0". Use .copy().
+Hydrogen bond donors/acceptors
 
-- Cell 9 draws the chart twice (seaborn barplot + plt.bar on the same axes),
-  with duplicate axhline/grid/xticks calls.
-
-- Cell 11 hardcodes labels=['Non-Toxic','Toxic'] on value_counts(), whose order
-  isn't guaranteed - use .reindex([0, 1]) so the labels can't flip.
-
-- Cell 12 uses kind='area' for categorical tasks, implying continuity that
-  isn't there. Grouped bars instead.
-
-- Cell 14 runs scaffold_split on the full df including NaN-label rows, using a
-  different implementation than training. Analyze the split you actually train on.
-
+Formal charge and aromaticity
 
 Most useful addition: validate the split rather than just describe the dataset -
 scaffold group size distribution (largest group, singletons, acyclic count),
