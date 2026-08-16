@@ -245,7 +245,7 @@ def load_ckp(checkpoint_fpath, model, optimizer):
         Tuple of (model, optimizer, epoch).
     """
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    checkpoint = torch.load(checkpoint_fpath, map_location=device)
+    checkpoint = torch.load(checkpoint_fpath, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint['state_dict'])
     optimizer.load_state_dict(checkpoint['optimizer'])
     model.to(device)
