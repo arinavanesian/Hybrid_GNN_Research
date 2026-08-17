@@ -9,6 +9,7 @@ import torch
 import shutil
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.Chem import MolToSmiles
+import pandas as pd
 
 def one_hot_encoding(x, permitted_list):
     """
@@ -253,25 +254,48 @@ def load_ckp(checkpoint_fpath, model, optimizer):
     
     return model, optimizer, checkpoint['epoch']
 
-def get_scaffold(smiles: str) -> str:
-    """Return Bemis-Murcko scaffold SMILES for a molecule if
-    possible, otherwise return the canonical SMILES.
+
+def is_valid_smiles(smiles: str) -> bool:
+    """
+    Checks if a SMILES string is valid.
+    
     Parameters
     ----------
     smiles : str
-        SMILES string of the molecule.
-    Returns"""
+        SMILES string to check.
+    Returns
+    -------
+    bool
+        True if the SMILES string is valid, False otherwise.
+    """
+    if not isinstance(smiles, str) or not smiles.strip():
+        return False
+    try:
+        mol = Chem.MolFromSmiles(smiles)
+        return mol is not None
+    except Exception:
+        return False
+
+from typing import List
+
+def get_valid_mask(smiles_series: pd.Series) -> pd.Series:
+    """
+    Returns a boolean Series mask indicating valid SMILES.
+    """
+    return smiles_series.apply(is_valid_smiles)
+
+def get_scaffold(smiles: str) -> str:
     try:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return "INVALID"
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=True)
+        if scaffold == "":
+            # Acyclic molecule — use canonical SMILES as its own group key
+            return Chem.MolToSmiles(mol, canonical=True)
+        return scaffold
     except Exception:
-        scaffold = ""
-    cannonincal_smiles = Chem.MolToSmiles(mol, canonical=True)
-    
-    return scaffold if scaffold != "" else cannonincal_smiles
-
+        return "INVALID"
 def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
     """
     Split a list of SMILES strings into train, validation, and test sets based on Bemis-Murcko scaffolds.
