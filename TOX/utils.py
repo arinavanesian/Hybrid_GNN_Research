@@ -122,8 +122,8 @@ def get_bond_features(bond,
     return np.array(bond_feature_vector)
 
 
-def create_pytorch_geometric_graph_data_list_from_smiles_and_labels(x_smiles, y):
-    """
+def smiles_to_graph_list(x_smiles, y):
+    """ 
     This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
     Creates a list of PyTorch Geometric Data objects from smiles strings and labels.
     
@@ -296,7 +296,8 @@ def get_scaffold(smiles: str) -> str:
         return scaffold
     except Exception:
         return "INVALID"
-def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
+
+def scaffold_split(smiles_list:List[str], train_frac:float, val_frac:float, seed:int):
     """
     Split a list of SMILES strings into train, validation, and test sets based on Bemis-Murcko scaffolds.
     The split is done such that molecules with the same scaffold are in the same set (includeChirality=True).
@@ -342,11 +343,36 @@ def scaffold_split(smiles_list, train_frac=0.6, val_frac=0.2, seed=42):
             test_idx.extend(group)
  
     print(
-      f"Scaffold split → train: {len(train_idx)} ({len(train_idx)/n_total:.1%}),"
-      f" val: {len(val_idx)} ({len(val_idx)/n_total:.1%}), test:"
-      f" {len(test_idx)} ({len(test_idx)/n_total:.1%})"
+      f"Scaffold split → train: {len(train_idx)} ({len(train_idx)/n_total:.2%}),"
+      f" val: {len(val_idx)} ({len(val_idx)/n_total:.2%}), test:"
+      f" {len(test_idx)} ({len(test_idx)/n_total:.2%})"
   )
     return train_idx, val_idx, test_idx
+
+def validate_scaffold_split(train_idx, val_idx, test_idx, y_labels, task_cols):
+    """
+    Calculates the number of toxic compounds (1) per train, val and test split
+    Parameters:
+    ----------
+    train_idx: List[int]
+    val_idx: List[int]
+    test_idx: List[int]
+    y_labels : List[int]
+    task_cols: List[str]
+    ----------
+    Returns
+        # of toxic compounds in each splits
+    num_train_pos:int 
+    num_val_pos:int
+    num_test_pos:int
+    
+    """
+    for col_idx, col_name in enumerate(task_cols):
+        num_train_pos = np.sum(y_labels[train_idx, col_idx]==1)
+        num_val_pos = np.sum(y_labels[val_idx, col_idx]==1)
+        num_test_pos = np.sum(y_labels[test_idx, col_idx]==1)
+        print(f"Task {col_name:10s} | Train Pos: {num_train_pos:4d} | Val Pos: {num_val_pos:3d} | Test Pos: {num_test_pos:3d}")
+    return num_train_pos, num_val_pos, num_test_pos
 
 
 def round_to_4(value):

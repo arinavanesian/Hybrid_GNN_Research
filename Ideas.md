@@ -84,7 +84,11 @@ This analysis directly reveals **Activity Cliffs**—molecules with $Tanimoto > 
 * If your dataset has many Activity Cliffs, standard message-passing GNNs often struggle because spatial aggregation tends to smooth out tiny atom-level differences.
 * This explains why **GIN** (which preserves distinct subgraph identities) or models using explicit edge features often outperform standard GraphSAGE on these specific datasets.
 
+### **Strategy B: Graph Contrastive Learning (SimCLR / InfoNCE Loss)**
+Pass two molecular graphs $G_i$ and $G_j$ through your GNN encoder to get latent vectors $\mathbf{z}_i$ and $\mathbf{z}_j$.Enforce that the cosine similarity of their latent embeddings $\text{Cosine}(\mathbf{z}_i, \mathbf{z}_j)$ correlates with their topological Jaccard similarity $\text{Jaccard}(G_i, G_j)$.Why it works: The GNN naturally structures its latent embedding space according to chemical similarity without requiring manual feature engineerin
+
 ---
+
 
 ## Comparison Summary
 
@@ -98,7 +102,8 @@ This analysis directly reveals **Activity Cliffs**—molecules with $Tanimoto > 
 
 # Fine-tuning
 Pre-train your GNN on large-scale chemical structures (e.g., ZINC or ChEMBL using ChemBERTa or Self-Supervised Graph Masking) before fine-tuning on Tox21. This teaches the model general molecular interactions and implicit binding physics.
-Train your GNN backbone to predict $\text{pIC}_{50}$ / $\text{K}_i$ values across millions of compound-target pairs in ChEMBL or PubChem.
+Training your GNN backbone to predict $\text{pIC}_{50}$ / $\text{K}_i$ values across millions of compound-target pairs in ChEMBL or PubChem will
+help with predictions on the Tox21 not the otherway around(leaking target info into the model)
 
 # Scaffold-splits
 Rerun on the final ones to find scaffolds between 
