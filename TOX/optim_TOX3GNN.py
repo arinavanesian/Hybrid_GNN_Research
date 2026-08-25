@@ -29,21 +29,8 @@ import optuna
 import shutil
 import random
 import warnings
-from best_results import BEST_DROPOUT, BEST_HIDDEN, BEST_LAYER_TYPES, LR
-from utils import (
-    create_pytorch_geometric_graph_data_list_from_smiles_and_labels,
-    round_to_4,
-    save_ckp,
-    scaffold_split
-)
 
-SEED = 42
-random.seed(SEED)
-np.random.seed(SEED)
-torch.manual_seed(SEED)
-
-
-df=pd.read_csv('TOX/tox21_dataset.csv')
+df=pd.read_csv('tox21_dataset.csv')
 #for i in df.columns:
     #print(i, df[i].isna().sum(), str(df[i].sum()/len(df[i])))
 
@@ -62,12 +49,183 @@ print('#of compound: ',len(df['SR-ARE']))
 X = list(df['smiles'])
 y = list(df['SR-ARE'])
 
+
+
+def one_hot_encoding(x, permitted_list):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Maps input elements x which are not in the permitted list to the last element
+    of the permitted list.
+    """
+    if x not in permitted_list:
+        x = permitted_list[-1]
+    binary_encoding = [int(boolean_value) for boolean_value in list(map(lambda s: x == s, permitted_list))]
+    return binary_encoding
+
+def get_atom_features(atom, 
+                      use_chirality = True, 
+                      hydrogens_implicit = True):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Takes an RDKit atom object as input and gives a 1d-numpy array of atom features as output.
+    """
+    # list of permitted atoms
+    
+    permitted_list_of_atoms =  ['C','N','O','S','F','Si','P','Cl','Br','Mg','Na','Ca','Fe','As','Al','I', 'B','V','K','Tl','Yb','Sb','Sn','Ag','Pd','Co','Se','Ti','Zn', 'Li','Ge','Cu','Au','Ni','Cd','In','Mn','Zr','Cr','Pt','Hg','Pb','Unknown']
+    
+    if hydrogens_implicit == False:
+        permitted_list_of_atoms = ['H'] + permitted_list_of_atoms
+    
+    # atom features
+    
+    atom_type_enc = one_hot_encoding(str(atom.GetSymbol()), permitted_list_of_atoms)
+    
+    n_heavy_neighbors_enc = one_hot_encoding(int(atom.GetDegree()), [0, 1, 2, 3, 4, "MoreThanFour"])
+    
+    formal_charge_enc = one_hot_encoding(int(atom.GetFormalCharge()), [-3, -2, -1, 0, 1, 2, 3, "Extreme"])
+    
+    hybridisation_type_enc = one_hot_encoding(str(atom.GetHybridization()), ["S", "SP", "SP2", "SP3", "SP3D", "SP3D2", "OTHER"])
+    
+    is_in_a_ring_enc = [int(atom.IsInRing())]
+    
+    is_aromatic_enc = [int(atom.GetIsAromatic())]
+    
+    atomic_mass_scaled = [float((atom.GetMass() - 10.812)/116.092)]
+    
+    vdw_radius_scaled = [float((Chem.GetPeriodicTable().GetRvdw(atom.GetAtomicNum()) - 1.5)/0.6)]
+    
+    covalent_radius_scaled = [float((Chem.GetPeriodicTable().GetRcovalent(atom.GetAtomicNum()) - 0.64)/0.76)]
+    atom_feature_vector = atom_type_enc + n_heavy_neighbors_enc + formal_charge_enc + hybridisation_type_enc + is_in_a_ring_enc + is_aromatic_enc + atomic_mass_scaled + vdw_radius_scaled + covalent_radius_scaled
+                                    
+    if use_chirality == True:
+        chirality_type_enc = one_hot_encoding(str(atom.GetChiralTag()), ["CHI_UNSPECIFIED", "CHI_TETRAHEDRAL_CW", "CHI_TETRAHEDRAL_CCW", "CHI_OTHER"])
+        atom_feature_vector += chirality_type_enc
+    
+    if hydrogens_implicit == True:
+        n_hydrogens_enc = one_hot_encoding(int(atom.GetTotalNumHs()), [0, 1, 2, 3, 4, "MoreThanFour"])
+        atom_feature_vector += n_hydrogens_enc
+    return np.array(atom_feature_vector)
+
+def get_bond_features(bond, 
+                      use_stereochemistry = True):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Takes an RDKit bond object as input and gives a 1d array of bond features as output.
+    """
+    permitted_list_of_bond_types = [Chem.rdchem.BondType.SINGLE, Chem.rdchem.BondType.DOUBLE, Chem.rdchem.BondType.TRIPLE, Chem.rdchem.BondType.AROMATIC]
+    bond_type_enc = one_hot_encoding(bond.GetBondType(), permitted_list_of_bond_types)
+    
+    bond_is_conj_enc = [int(bond.GetIsConjugated())]
+    
+    bond_is_in_ring_enc = [int(bond.IsInRing())]
+    
+    bond_feature_vector = bond_type_enc + bond_is_conj_enc + bond_is_in_ring_enc
+    
+
+    if use_stereochemistry == True:
+        stereo_type_enc = one_hot_encoding(str(bond.GetStereo()), ["STEREOZ", "STEREOE", "STEREOANY", "STEREONONE"])
+        bond_feature_vector += stereo_type_enc
+    return np.array(bond_feature_vector)
+
+def create_pytorch_geometric_graph_data_list_from_smiles_and_labels(x_smiles, y):
+    """
+    This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
+    Inputs:
+    
+    x_smiles = [smiles_1, smiles_2, ....] ... a list of SMILES strings
+    y = [y_1, y_2, ...] ... a list of numerial labels for the SMILES strings (such as associated pKi values)
+    
+    Outputs:
+    
+    data_list = [G_1, G_2, ...] ... a list of torch_geometric.data.Data objects which represent labeled molecular graphs 
+    
+    """
+    
+    data_list = []
+    
+    for (smiles, y_val) in zip(x_smiles, y):
+        
+        # SMILES to RDKit mol object
+        mol = Chem.MolFromSmiles(smiles)
+        # get feature dimensions
+        n_nodes = mol.GetNumAtoms()
+        n_edges = 2*mol.GetNumBonds()
+        unrelated_smiles = "O=O"
+        unrelated_mol = Chem.MolFromSmiles(unrelated_smiles)
+        n_node_features = len(get_atom_features(unrelated_mol.GetAtomWithIdx(0)))
+        n_edge_features = len(get_bond_features(unrelated_mol.GetBondBetweenAtoms(0,1)))
+        # construct node feature matrix X of shape (n_nodes, n_node_features)
+        X = np.zeros((n_nodes, n_node_features))
+        for atom in mol.GetAtoms():
+            X[atom.GetIdx(), :] = get_atom_features(atom)
+            
+        X = torch.tensor(X, dtype = torch.float)
+        
+        # construct edge index array E of shape (2, n_edges)
+        (rows, cols) = np.nonzero(GetAdjacencyMatrix(mol))
+        torch_rows = torch.from_numpy(rows.astype(np.int64)).to(torch.long)
+        torch_cols = torch.from_numpy(cols.astype(np.int64)).to(torch.long)
+        E = torch.stack([torch_rows, torch_cols], dim = 0)
+        
+        # construct edge feature array EF of shape (n_edges, n_edge_features)
+        EF = np.zeros((n_edges, n_edge_features))
+        
+        for (k, (i,j)) in enumerate(zip(rows, cols)):
+            
+            EF[k] = get_bond_features(mol.GetBondBetweenAtoms(int(i),int(j)))
+        
+        EF = torch.tensor(EF, dtype = torch.float)
+        
+        # construct label tensor
+        y_tensor = torch.tensor(np.array([y_val]), dtype = torch.float)
+        
+        # construct Pytorch Geometric data object and append to data list
+        data_list.append(Data(x = X, edge_index = E, edge_attr = EF, y = y_tensor))
+    return data_list
+
+
 data_list = create_pytorch_geometric_graph_data_list_from_smiles_and_labels(X, y)
 
 random.shuffle(data_list)
 data = DataLoader(dataset = data_list, batch_size = 64)
 
-  
+
+def save_ckp(state, is_best, checkpoint_dir, best_model_dir, filename, best_model):
+    f_path = checkpoint_dir + filename
+    torch.save(state, f_path)
+    if is_best:
+        best_fpath = best_model_dir + best_model
+        shutil.copyfile(f_path, best_fpath)
+        
+def optimizer_to(optim, device):
+    # move optimizer to device
+    for param in optim.state.values():
+        if isinstance(param, torch.Tensor):
+            param.data = param.data.to(device)
+            if param._grad is not None:
+                param._grad.data = param._grad.data.to(device)
+        elif isinstance(param, dict):
+            for subparam in param.values():
+                if isinstance(subparam, torch.Tensor):
+                    subparam.data = subparam.data.to(device)
+                    if subparam._grad is not None:
+                        subparam._grad.data = subparam._grad.data.to(device)
+
+def load_ckp(checkpoint_fpath, model, optimizer):
+    device = torch.device("cuda:0" if torch.cuda.is_available() else torch.device("cpu"))
+    checkpoint = torch.load(checkpoint_fpath, map_location = device)
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+    model.to(device)
+
+    optimizer_to(optimizer, device)
+    return model, optimizer, checkpoint['epoch']
+
+
+#-----------------------------------------------------------------------------------------  
+embedding_size = 400
+#-----------------------------------------------------------------------------------------  
+
 CUDA_LAUNCH_BLOCKING=1
 
 class GNN(torch.nn.Module):
@@ -119,7 +277,7 @@ class GNN(torch.nn.Module):
         x = self.out(x)
         return x
 
-model = GNN(layer_types=['sage', 'gin', 'sage'], hidden_dim=400, dropout=0.25)
+model = GNN(layer_types=['sage', 'sage', 'sage'], hidden_dim=400, dropout=0.25)
 print(model)
 
 warnings.filterwarnings("ignore")
@@ -138,21 +296,11 @@ pos_weight = torch.FloatTensor([6]).to(device)
 
 criterion=torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 #-----------------------------------------------------------------------------------------   
-
+# Wrap data in a data loader
 data_size = len(data_list)
 # Split into train, validation, test (60/20/20)
-USE_SCAFFOLD_HOP = True
-if USE_SCAFFOLD_HOP:
-    print("Using SCAFFOLD split (out-of-distribution evaluation)")
-    train_idx, val_idx, test_idx = scaffold_split(X, seed=SEED)
-else:
-    print("Using RANDOM split")
-    temp_idx  = list(range(data_size))
-    random.shuffle(temp_idx)
-    train_idx, temp = train_test_split(temp_idx, test_size=0.4, random_state=SEED)
-    val_idx, test_idx = train_test_split(temp,   test_size=0.5, random_state=SEED)
-    print(f"Random split → train: {len(train_idx)}, val: {len(val_idx)}, test: {len(test_idx)}")
- 
+train_idx, temp_idx = train_test_split(range(data_size), test_size=0.4, random_state=42)
+val_idx, test_idx = train_test_split(temp_idx, test_size=0.5, random_state=42)
 
 loader = DataLoader([data_list[i] for i in train_idx], batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True, drop_last=True)
 val_loader = DataLoader([data_list[i] for i in val_idx], batch_size=NUM_GRAPHS_PER_BATCH, shuffle=False, drop_last=False)
@@ -163,18 +311,22 @@ test_loader = DataLoader([data_list[i] for i in test_idx], batch_size=NUM_GRAPHS
 #                          batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True, drop_last = True)
 
 def train(loader):
+    # Enumerate over the data
     for batch in loader:
+      # Use GPU
       batch.to(device)  
+      # Reset gradients
       optimizer.zero_grad() 
+      # Passing the node features and the connection info
       pred = model(batch.x.float(), batch.edge_index, batch.batch)
  
       pred=torch.reshape(pred,(NUM_GRAPHS_PER_BATCH,))
 
       loss = criterion(pred,batch.y)
             
-      loss.backward() 
+      loss.backward()  # Calculating the loss and gradients
 
-      optimizer.step() 
+      optimizer.step()   # Update using the gradients
     return loss,  optimizer
 
 def test(loader):
@@ -215,16 +367,19 @@ acc_list = [0]
 precision_list=[0]
 specificity_list=[0]
 def objective(trial):
+    # Suggest hyperparameters
     layer_types = []
-    for i in range(3):
+    for i in range(3):  # fixed 3 layers
         layer_types.append(trial.suggest_categorical(f'layer_{i}', ['gcn', 'gat', 'gin', 'sage']))
     hidden_dim = trial.suggest_int('hidden_dim', 64, 256, step=32)
     dropout = trial.suggest_float('dropout', 0.0, 0.5)
     lr = trial.suggest_float('lr', 1e-5, 1e-3, log=True)
+    # pos_weight is fixed based on dataset imbalance
 
+    # Create model
     model = GNN(layer_types, hidden_dim, dropout).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    pos_weight = torch.FloatTensor([6]).to(device) 
+    pos_weight = torch.FloatTensor([6]).to(device)  # adjust if needed
     criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     # Training loop (early stop after 30 epochs to save time)
@@ -267,68 +422,57 @@ def objective(trial):
     return best_val_auc
 
 # --- Optuna ----
-RUN_OPTUNA = True
-if RUN_OPTUNA:
-    study = optuna.create_study(direction='maximize')
-    study.optimize(objective, n_trials=20, show_progress_bar=True)
+study = optuna.create_study(direction='maximize')
+study.optimize(objective, n_trials=20, show_progress_bar=True)
+# --- Save Optuna results to a text file ---
+with open("optuna_results.txt", "w") as f:
+    f.write("Optuna Study Results\n")
+    f.write("=" * 60 + "\n")
+    f.write(f"Best trial value (AUC): {study.best_trial.value:.6f}\n")
+    f.write("Best hyperparameters:\n")
+    for key, value in study.best_trial.params.items():
+        f.write(f"  {key}: {value}\n")
+    f.write("\nAll trials (sorted by AUC, descending):\n")
+    f.write("=" * 60 + "\n")
+    # Sort trials by value (best first)
+    sorted_trials = sorted(
+        [t for t in study.trials if t.value is not None],
+        key=lambda t: t.value,
+        reverse=True
+    )
+    for i, trial in enumerate(sorted_trials):
+        f.write(f"{i+1}. Trial #{trial.number}: AUC={trial.value:.6f} | Params={trial.params}\n")
+    f.write("=" * 60 + "\n")
+print(" Optuna results saved to 'optuna_results.txt'")
 
-    print("Best trial:")
-    best_trial = study.best_trial
-    print(f"  Value (AUC): {best_trial.value}")
-    print("  Params: ")
-    for key, value in best_trial.params.items():
-        print(f"    {key}: {round_to_4(value)}")
+print("Best trial:")
+best_trial = study.best_trial
+print(f"  Value (AUC): {best_trial.value}")
+print("  Params: ")
+for key, value in best_trial.params.items():
+    print(f"    {key}: {value}")
 
-    # best hyperparameters
-    best_layer_types = [best_trial.params[f'layer_{i}'] for i in range(3)]
-    best_hidden = best_trial.params['hidden_dim']
-    best_dropout = round_to_4(best_trial.params['dropout'])
-    best_lr = round_to_4(best_trial.params['lr'])
-
-
-
-    # --- Save Optuna results to a text file ---
-    with open("optuna_results.txt", "w") as f:
-        f.write("Optuna Study Results\n")
-        f.write("=" * 60 + "\n")
-        f.write(f"Best trial value (AUC): {study.best_trial.value:.6f}\n")
-        f.write("Best hyperparameters:\n")
-        for key, value in study.best_trial.params.items():
-            f.write(f"  {key}: {round_to_4(value)}\n")
-        f.write("\nAll trials (sorted by AUC, descending):\n")
-        f.write("=" * 60 + "\n")
-        # Sort trials by value (best first)
-        sorted_trials = sorted(
-            [t for t in study.trials if t.value is not None],
-            key=lambda t: t.value,
-            reverse=True
-        )
-        for i, trial in enumerate(sorted_trials):
-            f.write(f"{i+1}. Trial #{trial.number}: AUC={trial.value:.6f} | Params={trial.params}\n")
-        f.write("=" * 60 + "\n")
-    print(" Optuna results saved to 'optuna_results.txt'")
-else:
-    best_layer_types = BEST_LAYER_TYPES
-    best_hidden = BEST_HIDDEN
-    best_dropout = BEST_DROPOUT
-    best_lr = LR
+# Extract best hyperparameters
+best_layer_types = [best_trial.params[f'layer_{i}'] for i in range(3)]
+best_hidden = best_trial.params['hidden_dim']
+best_dropout = best_trial.params['dropout']
+best_lr = best_trial.params['lr']
 
 
-
-# Final model 
+# Final model with best hyperparameters
 final_model = GNN(best_layer_types, best_hidden, best_dropout).to(device)
 optimizer = torch.optim.Adam(final_model.parameters(), lr=best_lr)
 criterion = torch.nn.BCEWithLogitsLoss(pos_weight=torch.FloatTensor([6]).to(device))
 
 # Combine train+val for final training
-final_train_loader = DataLoader([data_list[i] for i in list(train_idx) + list(val_idx)], 
+final_train_loader = DataLoader([data_list[i] for i in train_idx + val_idx], 
                                 batch_size=NUM_GRAPHS_PER_BATCH, shuffle=True, drop_last=True)
 
 losses = []
 acc_list = []
 import time
 start_time = time.time()
-for epoch in range(100):  
+for epoch in range(100):  # more epochs now
     final_model.train()
     for batch in final_train_loader:
         batch = batch.to(device)
@@ -337,7 +481,7 @@ for epoch in range(100):
         loss = criterion(pred, batch.y)
         loss.backward()
         optimizer.step()
-  
+    # Evaluate on test set every 10 epochs
     if epoch % 10 == 0:
         final_model.eval()
         y_test_true = []
@@ -363,46 +507,46 @@ print(f"Final test AUC: {max(acc_list):.4f}")
 
 # Test Epochs
 
-PATIENCE = 10
-for epoch in range(100): #10_000
-    best_epoch = False
-    loss, optimizer = train(loader)
-    losses.append(loss)
-    roc_auc, precision, specificity, cm = test(test_loader)
-    
-    if roc_auc >= max(acc_list):
-        best_epoch = True
 
-    acc_list.append(roc_auc)
-    precision_list.append(precision)
-    specificity_list.append(specificity)
+# for epoch in range(100): #10_000
+#     best_epoch = False
+#     loss, optimizer = train(loader)
+#     losses.append(loss)
+#     roc_auc, precision, specificity, cm = test(test_loader)
     
-    checkpoint_gnn = {'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'optimizer': optimizer.state_dict()}
+#     if roc_auc >= max(acc_list):
+#         best_epoch = True
+
+#     acc_list.append(roc_auc)
+#     precision_list.append(precision)
+#     specificity_list.append(specificity)
+    
+#     checkpoint_gnn = {'epoch': epoch + 1,
+#                 'state_dict': model.state_dict(),
+#                 'optimizer': optimizer.state_dict()}
 
    
-#----------------------------------------------------------------------------------------------
-#             Give a name to the file 
-    NAME ="_".join(best_layer_types)
-    checkpoint_dir = "TOX/checkpoints_tox21/" + NAME  # Give a name to the file 
-    model_dir = "TOX/checkpoints_tox21/" + NAME + "_model" # Give a name to the file 
+# #----------------------------------------------------------------------------------------------
+# #             Give a name to the file 
+#     NAME = "sage_sage_sage"
+#     checkpoint_dir = "checkpoints_tox21/" + NAME  # Give a name to the file 
+#     model_dir = "checkpoints_tox21/" + NAME + "_model" # Give a name to the file 
     
-    name = "TOX/results_tox21/" + NAME + ".txt"        # Give a name to the file 
-    file = open(name,"a")
-    file.write("roc_auc: ")
-    file.write(str(roc_auc))
-    file.write("\n")
-    file.close()
+#     name = "results_tox21/" + NAME + ".txt"        # Give a name to the file 
+#     file = open(name,"a")
+#     file.write("roc_auc: ")
+#     file.write(str(roc_auc))
+#     file.write("\n")
+#     file.close()
     
     
-    save_ckp(checkpoint_gnn, best_epoch, checkpoint_dir, model_dir, "/checkpoints_" + NAME + "_tox21.pt", "/model_" + NAME + "_tox21.pt" )
+#     save_ckp(checkpoint_gnn, best_epoch, checkpoint_dir, model_dir, "/checkpoints_" + NAME + "_tox21.pt", "/model_" + NAME + "_tox21.pt" )
     
 
-    if epoch % 20==0:
-      print(max(acc_list))
-      print(f"Epoch {epoch} | Train Loss {loss} | roc auc score {roc_auc}")
-      sns.set(style="darkgrid")
-      acc_indices = [i for i,l in enumerate(acc_list)]
-      grafico = sns.lineplot(x=acc_indices, y=acc_list)
-      plt.show()
+#     if epoch % 20==0:
+#       print(max(acc_list))
+#       print(f"Epoch {epoch} | Train Loss {loss} | roc auc score {roc_auc}")
+#       sns.set(style="darkgrid")
+#       acc_indices = [i for i,l in enumerate(acc_list)]
+#       grafico = sns.lineplot(x=acc_indices, y=acc_list)
+#       plt.show()

@@ -11,6 +11,8 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.Chem import MolToSmiles
 import pandas as pd
 
+import os
+
 def one_hot_encoding(x, permitted_list):
     """
     This implementation was adapted from: https://www.blopig.com/blog/2022/02/how-to-turn-a-smiles-string-into-a-molecular-graph-for-pytorch-geometric/
@@ -172,7 +174,9 @@ def smiles_to_graph_list(x_smiles, y):
     return data_list
 
 
-def save_ckp(state, is_best, checkpoint_dir, best_model_dir, filename, best_model):
+def save_ckp(state, is_best, task_ckp_dir,
+              best_model_dir, model_fname, 
+              best_model_fname):
     """
     Saves the checkpoint to a file.
     
@@ -194,11 +198,13 @@ def save_ckp(state, is_best, checkpoint_dir, best_model_dir, filename, best_mode
     -------
     None
     """
-    f_path = checkpoint_dir + filename
+    f_path = os.path.join(task_ckp_dir, model_fname)
     torch.save(state, f_path)
     if is_best:
-        best_fpath = best_model_dir + best_model
-        shutil.copyfile(f_path, best_fpath)
+        best_fpath = os.path.join(best_model_dir, best_model_fname)
+        torch.save(state, best_fpath)
+        if hasattr(os, 'sync'):
+            os.sync()
 
 
 def optimizer_to(optim, device):

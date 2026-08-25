@@ -1,33 +1,25 @@
+# --- Feature Correlation Analysis ---
+# We'll compute correlation of each node feature across all atoms in the dataset,
+# and also mutual information with the target (using per-molecule aggregated features).
+
+# 1. Collect all node feature vectors per molecule, and aggregate to molecule-level fingerprint
+#    (e.g., sum or average of each feature across atoms)
+# --- Feature Correlation Analysis ---
+# We'll compute correlation of each node feature across all atoms in the dataset,
+# and also mutual information with the target (using per-molecule aggregated features).
+
+# 1. Collect all node feature vectors per molecule, and aggregate to molecule-level fingerprint
+#    (e.g., sum or average of each feature across atoms)
 import numpy as np
-from rdkit import Chem
-from rdkit.Chem.rdmolops import GetAdjacencyMatrix
-import torch
-from torch_geometric.data import Data
-from torch.utils.data import DataLoader
-import pandas as pd
-from sklearn.metrics import confusion_matrix
-import torch.nn as nn
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
-from torch.nn import Linear
-
-from torch_geometric.data import DataLoader
-from torch_geometric.nn import GCNConv, GATConv, GINConv, SAGEConv, TopKPooling, global_mean_pool
-from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
-from sklearn.metrics import accuracy_score , roc_auc_score , precision_score , recall_score
-from sklearn.model_selection import train_test_split
 from scipy.stats import pearsonr
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.feature_selection import mutual_info_classif
-import seaborn as  sns
+import pandas as pd
+import random
 
-from random import random
-from utils import *
+df=pd.read_csv('tox21_dataset.csv')
 
-df=pd.read_csv('/home/chemi_t/Documents/sci_fi/Programming/AUA/classes/Thesis/code/Hybrid_GNN/HybridGNN/TOX/tox21_dataset.csv')
-#for i in df.columns:
-    #print(i, df[i].isna().sum(), str(df[i].sum()/len(df[i])))
-
-#df=pd.read_csv('tox21_dataset_task.csv')
 df_task = pd.DataFrame()
 df_task['smiles']=df['smiles']
 df_task['SR-ARE']=df['SR-ARE']
@@ -151,6 +143,7 @@ def create_pytorch_geometric_graph_data_list_from_smiles_and_labels(x_smiles, y)
         X = np.zeros((n_nodes, n_node_features))
         for atom in mol.GetAtoms():
             X[atom.GetIdx(), :] = get_atom_features(atom)
+            
         X = torch.tensor(X, dtype = torch.float)
         
         # construct edge index array E of shape (2, n_edges)
@@ -180,24 +173,25 @@ data_list = create_pytorch_geometric_graph_data_list_from_smiles_and_labels(X, y
 
 random.shuffle(data_list)
 data = DataLoader(dataset = data_list, batch_size = 64)
-
-#  Calculating Pearson correlation with the target variable for each feature
 mol_features = []
 targets = []
 for data in data_list:
-    mol_feat = data.x.mean(dim=0).numpy()  
+    # data.x shape: (num_atoms, 79)
+    # aggregate: mean per feature (could also use sum, max, etc.)
+    mol_feat = data.x.mean(dim=0).numpy()  # shape (79,)
     mol_features.append(mol_feat)
     targets.append(data.y.item())
 
-mol_features = np.array(mol_features)  
+mol_features = np.array(mol_features)  # (num_molecules, 79)
 targets = np.array(targets)
 
+# 2. Compute Pearson correlation of each feature with target
 corr_with_target = []
 for i in range(mol_features.shape[1]):
     corr, _ = pearsonr(mol_features[:, i], targets)
     corr_with_target.append(abs(corr))
 
-# pairwise correlation between features (to drop highly correlated ones)
+# 3. Compute pairwise correlation between features (to drop highly correlated ones)
 corr_matrix = np.corrcoef(mol_features.T)  # (79,79)
 # Plot heatmap
 plt.figure(figsize=(12,10))
@@ -213,12 +207,12 @@ for i in range(79):
             high_corr_pairs.append((i, j, corr_matrix[i, j]))
 print(f"Number of highly correlated feature pairs (|r|>0.9): {len(high_corr_pairs)}")
 
-# Feature importance using mutual information (optional)
+# 5. Feature importance using mutual information (optional)
 mi = mutual_info_classif(mol_features, targets, random_state=42)
-important_features = np.where(mi > np.percentile(mi, 75))[0] 
+important_features = np.where(mi > np.percentile(mi, 75))[0]  # top 25% by MI
 print(f"Features with high mutual information (top 25%): {important_features}")
 
-# Based on correlation and MI, you can decide which features to drop.
+# 6. Based on correlation and MI, you can decide which features to drop.
 # For example, drop features that are highly correlated with another and have lower MI.
 # Here we just print suggestions.
 # We'll create a set of features to keep (initially all)

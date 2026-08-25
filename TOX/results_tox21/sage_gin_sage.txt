@@ -9998,3 +9998,73 @@ roc_auc: 0.6957826233941853
 roc_auc: 0.7008023805728253
 roc_auc: 0.70242270025232
 roc_auc: 0.6962524336592554
+run:00  best_auc:0.795889
+run:01  best_auc:0.790183
+run:02  best_auc:0.795203
+run:03  best_auc:0.785585
+run:00  best_auc:0.795977
+run:00  best_auc:0.801454
+run:01  best_auc:0.790916
+run:02  best_auc:0.800147
+run:03  best_auc:0.793297
+run:04  best_auc:0.792576
+run:05  best_auc:0.793543
+run:06  best_auc:0.787040
+run:07  best_auc:0.791110
+run:08  best_auc:0.792464
+run:09  best_auc:0.797033
+run:10  best_auc:0.794411
+run:11  best_auc:0.787726
+run:12  best_auc:0.797695
+run:13  best_auc:0.793687
+run:14  best_auc:0.793719
+run:15  best_auc:0.773194
+run:16  best_auc:0.796745
+run:17  best_auc:0.787098
+run:18  best_auc:0.786963
+run:19  best_auc:0.779392
+run:20  best_auc:0.796575
+run:21  best_auc:0.785239
+run:22  best_auc:0.790500
+run:23  best_auc:0.781263
+run:24  best_auc:0.790265
+run:25  best_auc:0.792734
+run:26  best_auc:0.784483
+run:27  best_auc:0.791872
+run:28  best_auc:0.787368
+run:29  best_auc:0.793971
+run:00  best_auc:0.751260  mod_auc:0.786830
+run:01  best_auc:0.754074  mod_auc:0.801926
+run:02  best_auc:0.755883  mod_auc:0.793359
+run:00  best_auc:0.758806  mod_auc:0.786231
+run:01  best_auc:0.741883  mod_auc:0.788906
+run:02  best_auc:0.758989  mod_auc:0.788933
+run:00  best_auc:0.758721  mod_auc:0.795172
+run:01  best_auc:0.769493  mod_auc:0.805007
+run:02  best_auc:0.739070  mod_auc:0.751414
+run:03  best_auc:0.768542  mod_auc:0.787503
+run:04  best_auc:0.751042  mod_auc:0.793931
+run:05  best_auc:0.760192  mod_auc:0.793519
+run:06  best_auc:0.764036  mod_auc:0.780696
+run:07  best_auc:0.769203  mod_auc:0.792118
+run:08  best_auc:0.764356  mod_auc:0.793365
+run:00  best_auc:0.730467  mod_auc:0.747014 final_train_loss:0.167212
+run:01  best_auc:0.721533  mod_auc:0.751668 final_train_loss:0.171519
+run:02  best_auc:0.735842  mod_auc:0.749305 final_train_loss:0.153473
+run:03  best_auc:0.740058  mod_auc:0.748320 final_train_loss:0.141859
+run:04  best_auc:0.727917  mod_auc:0.757236 final_train_loss:0.168987
+run:05  best_auc:0.720833  mod_auc:0.740321 final_train_loss:0.144137
+run:06  best_auc:0.744942  mod_auc:0.752014 final_train_loss:0.120457
+run:07  best_auc:0.738875  mod_auc:0.753875 final_train_loss:0.181688
+run:08  best_auc:0.729692  mod_auc:0.753999 final_train_loss:0.155153
+run:09  best_auc:0.724258  mod_auc:0.754331 final_train_loss:0.162417
+run:00  best_auc:0.713558  mod_auc:0.746622  final_train_loss:0.140655
+run:01  best_auc:0.718792  mod_auc:0.750387  final_train_loss:0.171364
+run:02  best_auc:0.733717  mod_auc:0.748224  final_train_loss:0.152708
+run:03  best_auc:0.737867  mod_auc:0.749516  final_train_loss:0.141544
+run:04  best_auc:0.730208  mod_auc:0.754692  final_train_loss:0.169326
+run:05  best_auc:0.723775  mod_auc:0.739323  final_train_loss:0.138617
+run:06  best_auc:0.737192  mod_auc:0.748683  final_train_loss:0.119509
+run:07  best_auc:0.743792  mod_auc:0.755295  final_train_loss:0.180495
+run:08  best_auc:0.728183  mod_auc:0.754074  final_train_loss:0.155547
+run:09  best_auc:0.727158  mod_auc:0.753674  final_train_loss:0.161406
