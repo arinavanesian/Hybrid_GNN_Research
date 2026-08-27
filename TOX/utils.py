@@ -279,7 +279,8 @@ def is_valid_smiles(smiles: str) -> bool:
     try:
         mol = Chem.MolFromSmiles(smiles)
         return mol is not None
-    except Exception:
+    except Exception as e:
+        print(f'Exception: {e}\n smiles :{smiles}')
         return False
 
 from typing import List
@@ -288,12 +289,17 @@ def get_valid_mask(smiles_series: pd.Series) -> pd.Series:
     """
     Returns a boolean Series mask indicating valid SMILES.
     """
-    return smiles_series.apply(is_valid_smiles)
+    total_len =len(smiles_series)
+    smiles_df = smiles_series.apply(is_valid_smiles)
+    valid_len = len(smiles_df)
+    print(f"Total # SMILES/Valid # SMILES: {total_len/valid_len}")
+    return smiles_df
 
 def get_scaffold(smiles: str) -> str:
     try:
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
+            print(f"Cant convert to Mol: {smiles}\n")
             return "INVALID"
         scaffold = MurckoScaffold.MurckoScaffoldSmiles(mol=mol, includeChirality=True)
         if scaffold == "":
