@@ -260,7 +260,6 @@ def load_ckp(checkpoint_fpath, model, optimizer):
     
     return model, optimizer, checkpoint['epoch']
 
-
 def is_valid_smiles(smiles: str) -> bool:
     """
     Checks if a SMILES string is valid.
@@ -386,6 +385,17 @@ def validate_scaffold_split(train_idx, val_idx, test_idx, y_labels, task_cols):
         print(f"Task {col_name:10s} | Train Pos: {num_train_pos:4d} | Val Pos: {num_val_pos:3d} | Test Pos: {num_test_pos:3d}")
     return num_train_pos, num_val_pos, num_test_pos
 
+def inspect_model_weights(model):
+    """
+    Extracts L2 weight norms and gradient norms for each layer in the GNN.
+    """
+    weight_stats = {}
+    for name, param in model.named_parameters():
+        if param.requires_grad:
+            w_norm = param.data.norm(2).item()
+            g_norm = param.grad.norm(2).item() if param.grad is not None else 0.0
+            weight_stats[name] = {'weight_norm': w_norm, 'grad_norm': g_norm}
+    return weight_stats
 
 def round_to_4(value):
     """
