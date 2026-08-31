@@ -6,6 +6,7 @@ from rdkit import Chem
 from rdkit.Chem.rdmolops import GetAdjacencyMatrix
 from torch_geometric.data import Data
 import torch
+from torch.utils.tensorboard import SummaryWriter
 import shutil
 from rdkit.Chem.Scaffolds import MurckoScaffold
 from rdkit.Chem import MolToSmiles
@@ -396,6 +397,22 @@ def inspect_model_weights(model):
             g_norm = param.grad.norm(2).item() if param.grad is not None else 0.0
             weight_stats[name] = {'weight_norm': w_norm, 'grad_norm': g_norm}
     return weight_stats
+def log_weights_to_tensorboard(writer, model, step):
+  """Logs weight norms, gradient norms, and layer histograms to TensorBoard."""
+  for name, param in model.named_parameters():
+    if param.requires_grad:
+      tb_name = name.replace('.', '/')
+
+      # Log scalar norms
+      w_norm = param.data.norm(2).item()
+      writer.add_scalar(f'Weights_L2/{tb_name}', w_norm, step)
+
+      if param.grad is not None:
+        g_norm = param.grad.norm(2).item()
+        writer.add_scalar(f'Gradients_L2/{tb_name}', g_norm, step)
+
+      # Log full weight histogram (sampled periodically to save disk space)
+      writer.add_histogram(f'Histograms_Weights/{tb_name}', param.data, step)
 
 def round_to_4(value):
     """
