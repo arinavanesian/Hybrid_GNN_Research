@@ -309,6 +309,7 @@ def get_scaffold(smiles: str) -> str:
     except Exception:
         return "INVALID"
 
+
 def scaffold_split(smiles_list:List[str], train_frac:float, val_frac:float, seed:int):
     """
     Split a list of SMILES strings into train, validation, and test sets based on Bemis-Murcko scaffolds.
@@ -397,12 +398,12 @@ def inspect_model_weights(model):
             g_norm = param.grad.norm(2).item() if param.grad is not None else 0.0
             weight_stats[name] = {'weight_norm': w_norm, 'grad_norm': g_norm}
     return weight_stats
+
 def log_weights_to_tensorboard(writer, model, step):
   """Logs weight norms, gradient norms, and layer histograms to TensorBoard."""
   for name, param in model.named_parameters():
     if param.requires_grad:
       tb_name = name.replace('.', '/')
-
       # Log scalar norms
       w_norm = param.data.norm(2).item()
       writer.add_scalar(f'Weights_L2/{tb_name}', w_norm, step)
@@ -410,8 +411,6 @@ def log_weights_to_tensorboard(writer, model, step):
       if param.grad is not None:
         g_norm = param.grad.norm(2).item()
         writer.add_scalar(f'Gradients_L2/{tb_name}', g_norm, step)
-
-      # Log full weight histogram (sampled periodically to save disk space)
       writer.add_histogram(f'Histograms_Weights/{tb_name}', param.data, step)
 
 def round_to_4(value):
@@ -429,4 +428,3 @@ def round_to_4(value):
     if isinstance(value, (float, np.floating)):
         return np.round(value, 4)
     return value
-
